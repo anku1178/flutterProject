@@ -708,7 +708,7 @@ class _WorkerDashboardState extends ConsumerState<WorkerDashboard> {
                         icon: Icons.person_outline,
                         title: 'Edit Profile',
                         subtitle: 'Update your information',
-                        onTap: () {},
+                        onTap: () => context.push('/worker/profile'),
                       ),
                       const Divider(height: 1),
                       _buildProfileOption(

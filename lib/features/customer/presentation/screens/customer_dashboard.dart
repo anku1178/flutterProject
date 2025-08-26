@@ -529,7 +529,7 @@ class _CustomerDashboardState extends ConsumerState<CustomerDashboard> {
                         icon: Icons.person_outline,
                         title: 'Edit Profile',
                         subtitle: 'Update your personal information',
-                        onTap: () {},
+                        onTap: () => context.push('/customer/profile'),
                       ),
                       const Divider(height: 1),
                       _buildProfileOption(
