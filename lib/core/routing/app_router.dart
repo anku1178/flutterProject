@@ -5,6 +5,7 @@ import '../providers/product_providers.dart';
 import '../models/models.dart';
 import '../../features/auth/presentation/screens/login_screen.dart';
 import '../../features/auth/presentation/screens/signup_screen.dart';
+import '../../features/auth/presentation/screens/otp_verification_screen.dart';
 import '../../features/onboarding/presentation/screens/onboarding_screen.dart';
 import '../../features/customer/presentation/screens/customer_dashboard.dart';
 import '../../features/customer/presentation/screens/product_list_screen.dart';
@@ -20,6 +21,9 @@ import '../../features/admin/presentation/screens/admin_inventory_screen.dart';
 import '../../features/admin/presentation/screens/analytics_screen.dart';
 import '../../features/admin/presentation/screens/user_management_screen.dart';
 import '../../features/admin/presentation/screens/excel_import_screen.dart';
+import '../../features/customer/presentation/screens/customer_profile_screen.dart';
+import '../../features/worker/presentation/screens/worker_profile_screen.dart';
+import '../../features/admin/presentation/screens/admin_profile_screen.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
   final authState = ref.watch(authStateProvider);
@@ -38,7 +42,9 @@ final routerProvider = Provider<GoRouter>((ref) {
 
       // If onboarded but not logged in, go to login (except if on auth pages)
       if (onboardingCompleted && !isLoggedIn) {
-        if (currentLocation != '/login' && currentLocation != '/signup') {
+        if (currentLocation != '/login' && 
+            currentLocation != '/signup' && 
+            currentLocation != '/otp-verification') {
           return '/login';
         }
       }
@@ -47,7 +53,8 @@ final routerProvider = Provider<GoRouter>((ref) {
       if (isLoggedIn &&
           (currentLocation == '/onboarding' ||
               currentLocation == '/login' ||
-              currentLocation == '/signup')) {
+              currentLocation == '/signup' ||
+              currentLocation == '/otp-verification')) {
         final user = ref.read(currentUserProvider);
         if (user != null) {
           switch (user.role) {
@@ -77,6 +84,18 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/signup',
         builder: (context, state) => const SignupScreen(),
+      ),
+      GoRoute(
+        path: '/otp-verification',
+        builder: (context, state) {
+          final extra = state.extra as Map<String, dynamic>?;
+          return OtpVerificationScreen(
+            name: extra?['name'] ?? '',
+            phoneNumber: extra?['phoneNumber'] ?? '',
+            selectedLanguage: extra?['selectedLanguage'] ?? '',
+            isRegistration: extra?['isRegistration'] ?? false,
+          );
+        },
       ),
 
       // Customer Routes
@@ -108,6 +127,10 @@ final routerProvider = Provider<GoRouter>((ref) {
               orderId: state.pathParameters['id']!,
             ),
           ),
+          GoRoute(
+            path: 'profile',
+            builder: (context, state) => const CustomerProfileScreen(),
+          ),
         ],
       ),
 
@@ -123,6 +146,10 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: 'inventory',
             builder: (context, state) => const WorkerInventoryScreen(),
+          ),
+          GoRoute(
+            path: 'profile',
+            builder: (context, state) => const WorkerProfileScreen(),
           ),
         ],
       ),
@@ -148,6 +175,10 @@ final routerProvider = Provider<GoRouter>((ref) {
             path: 'import',
             builder: (context, state) => const ExcelImportScreen(),
           ),
+          GoRoute(
+            path: 'profile',
+            builder: (context, state) => const AdminProfileScreen(),
+          ),
         ],
       ),
     ],
@@ -164,7 +195,7 @@ String _getInitialLocation(AuthState authState) {
     return '/login';
   }
 
-  // User is logged in, default to customer dashboard
-  // This will be corrected by redirect logic based on actual user role
-  return '/customer';
+  // User is logged in, but we can't access the user object directly here
+  // The redirect function will handle proper routing based on user role
+  return '/customer'; // This will be corrected by redirect logic
 }

@@ -739,6 +739,14 @@ class _AdminDashboardState extends ConsumerState<AdminDashboard> {
                   child: Column(
                     children: [
                       ListTile(
+                        leading: const Icon(Icons.person),
+                        title: const Text('Profile'),
+                        subtitle: const Text('View and edit your profile'),
+                        trailing: const Icon(Icons.arrow_forward_ios),
+                        onTap: () => context.push('/admin/profile'),
+                      ),
+                      const Divider(height: 1),
+                      ListTile(
                         leading: const Icon(Icons.store),
                         title: const Text('Store Settings'),
                         subtitle: const Text('Manage store information'),
