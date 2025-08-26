@@ -44,7 +44,7 @@ class _ExcelImportScreenState extends State<ExcelImportScreen> {
                   children: [
                     Row(
                       children: [
-                        Icon(
+                        const Icon(
                           Icons.info_outline,
                           color: AppColors.info,
                         ),
@@ -65,7 +65,7 @@ class _ExcelImportScreenState extends State<ExcelImportScreen> {
                           padding: const EdgeInsets.only(bottom: 4),
                           child: Row(
                             children: [
-                              Icon(
+                              const Icon(
                                 Icons.circle,
                                 size: 6,
                                 color: AppColors.textSecondary,

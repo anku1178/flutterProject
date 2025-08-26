@@ -1,19 +1,21 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:badges/badges.dart' as badges;
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/cards.dart';
 import '../../../../core/widgets/buttons.dart';
 import '../../../../core/models/models.dart';
+import '../../../../core/providers/auth_providers.dart';
 
-class CustomerDashboard extends StatefulWidget {
+class CustomerDashboard extends ConsumerStatefulWidget {
   const CustomerDashboard({super.key});
 
   @override
-  State<CustomerDashboard> createState() => _CustomerDashboardState();
+  ConsumerState<CustomerDashboard> createState() => _CustomerDashboardState();
 }
 
-class _CustomerDashboardState extends State<CustomerDashboard> {
+class _CustomerDashboardState extends ConsumerState<CustomerDashboard> {
   int _currentIndex = 0;
   final List<Product> _featuredProducts = _generateFeaturedProducts();
   final List<String> _categories = [
@@ -562,7 +564,7 @@ class _CustomerDashboardState extends State<CustomerDashboard> {
                         icon: Icons.logout,
                         title: 'Logout',
                         subtitle: 'Sign out of your account',
-                        onTap: () => context.go('/login'),
+                        onTap: () => _showLogoutConfirmation(),
                         isDestructive: true,
                       ),
                     ],
@@ -758,5 +760,86 @@ class _CustomerDashboardState extends State<CustomerDashboard> {
         ),
       ),
     );
+  }
+
+  void _showLogoutConfirmation() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Logout'),
+        content: const Text('Are you sure you want to logout?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(context);
+              await _performLogout();
+            },
+            child: const Text(
+              'Logout',
+              style: TextStyle(color: AppColors.error),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _performLogout() async {
+    try {
+      // Show loading indicator
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Row(
+              children: [
+                SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                  ),
+                ),
+                SizedBox(width: 16),
+                Text('Logging out...'),
+              ],
+            ),
+            backgroundColor: AppColors.info,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+
+      // Clear authentication state
+      await ref.read(authStateProvider.notifier).logout();
+      await ref.read(currentUserProvider.notifier).clearUser();
+
+      // Navigate to login screen
+      if (mounted) {
+        context.go('/login');
+        
+        // Show success message
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Successfully logged out'),
+            backgroundColor: AppColors.success,
+          ),
+        );
+      }
+    } catch (e) {
+      // Show error message
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Logout failed: ${e.toString()}'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    }
   }
 }

@@ -1,331 +1,311 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:badges/badges.dart' as badges;
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/cards.dart';
 import '../../../../core/widgets/buttons.dart';
 import '../../../../core/models/models.dart';
+import '../../../../core/providers/order_providers.dart';
+import '../../../../core/providers/auth_providers.dart';
 
-class WorkerDashboard extends StatefulWidget {
+class WorkerDashboard extends ConsumerStatefulWidget {
   const WorkerDashboard({super.key});
 
   @override
-  State<WorkerDashboard> createState() => _WorkerDashboardState();
+  ConsumerState<WorkerDashboard> createState() => _WorkerDashboardState();
 }
 
-class _WorkerDashboardState extends State<WorkerDashboard> {
+class _WorkerDashboardState extends ConsumerState<WorkerDashboard> {
   int _currentIndex = 0;
-  List<Order> _pendingOrders = [];
-  List<Order> _completedOrders = [];
-  int _newOrdersCount = 0;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadOrders();
-    _simulateNewOrders();
-  }
-
-  void _loadOrders() {
-    // Simulate loading orders
-    _pendingOrders = [
-      Order(
-        id: 'ORD001',
-        customerId: 'customer1',
-        items: [
-          CartItem(
-            product: Product(
-              id: '1',
-              name: 'Wireless Headphones',
-              description: 'High-quality wireless headphones',
-              price: 129.99,
-              stock: 15,
-              category: 'Electronics',
-              imageUrl: 'https://via.placeholder.com/100x100?text=Headphones',
-              createdAt: DateTime.now(),
-              updatedAt: DateTime.now(),
-            ),
-            quantity: 1,
-          ),
-        ],
-        totalAmount: 129.99,
-        status: OrderStatus.received,
-        paymentMethod: PaymentMethod.online,
-        createdAt: DateTime.now().subtract(const Duration(minutes: 5)),
-      ),
-      Order(
-        id: 'ORD002',
-        customerId: 'customer2',
-        items: [
-          CartItem(
-            product: Product(
-              id: '2',
-              name: 'Fresh Apples',
-              description: 'Organic red apples',
-              price: 4.99,
-              stock: 50,
-              category: 'Groceries',
-              imageUrl: 'https://via.placeholder.com/100x100?text=Apples',
-              createdAt: DateTime.now(),
-              updatedAt: DateTime.now(),
-            ),
-            quantity: 5,
-          ),
-        ],
-        totalAmount: 24.95,
-        status: OrderStatus.preparing,
-        paymentMethod: PaymentMethod.cashOnPickup,
-        createdAt: DateTime.now().subtract(const Duration(minutes: 15)),
-      ),
-    ];
-
-    _completedOrders = [
-      Order(
-        id: 'ORD003',
-        customerId: 'customer3',
-        items: [
-          CartItem(
-            product: Product(
-              id: '3',
-              name: 'Cotton T-Shirt',
-              description: 'Comfortable cotton t-shirt',
-              price: 19.99,
-              stock: 30,
-              category: 'Clothing',
-              imageUrl: 'https://via.placeholder.com/100x100?text=T-Shirt',
-              createdAt: DateTime.now(),
-              updatedAt: DateTime.now(),
-            ),
-            quantity: 2,
-          ),
-        ],
-        totalAmount: 39.98,
-        status: OrderStatus.completed,
-        paymentMethod: PaymentMethod.online,
-        createdAt: DateTime.now().subtract(const Duration(hours: 1)),
-      ),
-    ];
-  }
-
-  void _simulateNewOrders() {
-    // Simulate receiving new orders every 30 seconds
-    Future.delayed(const Duration(seconds: 30), () {
-      if (mounted) {
-        setState(() {
-          _newOrdersCount++;
-        });
-        _simulateNewOrders();
-      }
-    });
-  }
 
   @override
   Widget build(BuildContext context) {
+    final orderState = ref.watch(orderProvider);
+    final orderStats = ref.watch(orderStatsProvider);
+
     return Scaffold(
       backgroundColor: AppColors.background,
       body: IndexedStack(
         index: _currentIndex,
         children: [
-          _buildDashboardTab(),
-          _buildOrdersTab(),
+          _buildDashboardTab(orderState, orderStats),
+          _buildOrdersTab(orderState),
           _buildInventoryTab(),
           _buildProfileTab(),
         ],
       ),
-      bottomNavigationBar: _buildBottomNavigationBar(),
+      bottomNavigationBar: _buildBottomNavigationBar(orderState.newOrdersCount),
     );
   }
 
-  Widget _buildDashboardTab() {
-    return CustomScrollView(
-      slivers: [
-        // App Bar
-        SliverAppBar(
-          floating: true,
-          backgroundColor: AppColors.primary,
-          title: const Text('Worker Dashboard'),
-          actions: [
-            badges.Badge(
-              badgeContent: Text(
-                '$_newOrdersCount',
-                style: const TextStyle(color: Colors.white, fontSize: 10),
+  Widget _buildDashboardTab(OrderState orderState, OrderStatistics stats) {
+    return RefreshIndicator(
+      onRefresh: () async {
+        ref.read(orderProvider.notifier).refreshOrders();
+      },
+      child: CustomScrollView(
+        slivers: [
+          // App Bar with real-time updates
+          SliverAppBar(
+            floating: true,
+            backgroundColor: AppColors.primary,
+            title: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Worker Dashboard'),
+                Text(
+                  'Last updated: ${_formatTime(orderState.lastUpdate)}',
+                  style: const TextStyle(
+                    color: Colors.white70,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              badges.Badge(
+                badgeContent: Text(
+                  '${orderState.newOrdersCount}',
+                  style: const TextStyle(color: Colors.white, fontSize: 10),
+                ),
+                showBadge: orderState.newOrdersCount > 0,
+                child: IconButton(
+                  icon: const Icon(Icons.notifications_outlined),
+                  onPressed: () => _showNotifications(orderState),
+                ),
               ),
-              showBadge: _newOrdersCount > 0,
-              child: IconButton(
-                icon: const Icon(Icons.notifications_outlined),
-                onPressed: () => _showNotifications(),
+              const SizedBox(width: 8),
+            ],
+          ),
+
+          // Enhanced Stats Section
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Welcome Message
+                  Text(
+                    'Hello, Worker!',
+                    style: AppTextStyles.heading2,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Here\'s what\'s happening today',
+                    style: AppTextStyles.body2,
+                  ),
+                  const SizedBox(height: 24),
+
+                  // Primary Stats Row
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _buildStatCard(
+                          title: 'Pending Orders',
+                          value: '${stats.pendingOrders}',
+                          icon: Icons.pending_actions,
+                          color: AppColors.warning,
+                          trend: orderState.newOrdersCount > 0
+                              ? '+${orderState.newOrdersCount}'
+                              : null,
+                          onTap: () => setState(() => _currentIndex = 1),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _buildStatCard(
+                          title: 'Completed Today',
+                          value: '${stats.completedToday}',
+                          icon: Icons.check_circle,
+                          color: AppColors.success,
+                          onTap: () => setState(() => _currentIndex = 1),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+
+                  // Secondary Stats Row
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _buildStatCard(
+                          title: 'Today Revenue',
+                          value: '\$${stats.todayRevenue.toStringAsFixed(0)}',
+                          icon: Icons.attach_money,
+                          color: AppColors.primary,
+                          subtitle:
+                              'Avg: \$${stats.averageOrderValue.toStringAsFixed(0)}',
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _buildStatCard(
+                          title: 'New Orders',
+                          value: '${orderState.newOrdersCount}',
+                          icon: Icons.new_releases,
+                          color: AppColors.accent,
+                          onTap: () => setState(() => _currentIndex = 1),
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  // Loading indicator for real-time updates
+                  if (orderState.isLoading)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 16),
+                      child: Center(
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                    AppColors.primary),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Updating...',
+                              style: AppTextStyles.caption,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                ],
               ),
             ),
-            const SizedBox(width: 8),
-          ],
-        ),
+          ),
 
-        // Quick Stats
-        SliverToBoxAdapter(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Welcome Message
-                Text(
-                  'Hello, Worker!',
-                  style: AppTextStyles.heading2,
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Here\'s what\'s happening today',
-                  style: AppTextStyles.body2,
-                ),
-                const SizedBox(height: 24),
-
-                // Stats Cards
-                Row(
-                  children: [
-                    Expanded(
-                      child: _buildStatCard(
-                        title: 'Pending Orders',
-                        value: '${_pendingOrders.length}',
-                        icon: Icons.pending_actions,
-                        color: AppColors.warning,
-                        onTap: () => setState(() => _currentIndex = 1),
+          // Recent Orders Section with real-time updates
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'Recent Orders',
+                        style: AppTextStyles.heading3,
                       ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _buildStatCard(
-                        title: 'Completed Today',
-                        value: '${_completedOrders.length}',
-                        icon: Icons.check_circle,
-                        color: AppColors.success,
-                        onTap: () => setState(() => _currentIndex = 1),
+                      Row(
+                        children: [
+                          if (orderState.newOrdersCount > 0)
+                            Container(
+                              margin: const EdgeInsets.only(right: 8),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: AppColors.accent.withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Text(
+                                '${orderState.newOrdersCount} new',
+                                style: TextStyle(
+                                  color: AppColors.accent,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          TextButton(
+                            onPressed: () => setState(() => _currentIndex = 1),
+                            child: const Text('View All'),
+                          ),
+                        ],
                       ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _buildStatCard(
-                        title: 'New Orders',
-                        value: '$_newOrdersCount',
-                        icon: Icons.new_releases,
-                        color: AppColors.accent,
-                        onTap: () => setState(() => _currentIndex = 1),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _buildStatCard(
-                        title: 'Inventory Check',
-                        value: 'Due',
-                        icon: Icons.inventory,
-                        color: AppColors.info,
-                        onTap: () => setState(() => _currentIndex = 2),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                ],
+              ),
             ),
           ),
-        ),
 
-        // Recent Orders Section
-        SliverToBoxAdapter(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      'Recent Orders',
-                      style: AppTextStyles.heading3,
-                    ),
-                    TextButton(
-                      onPressed: () => setState(() => _currentIndex = 1),
-                      child: const Text('View All'),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-              ],
+          // Recent Orders List with real-time data
+          SliverList(
+            delegate: SliverChildBuilderDelegate(
+              (context, index) {
+                final recentOrders = [
+                  ...orderState.pendingOrders,
+                  ...orderState.completedOrders
+                ]..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+                if (index >= recentOrders.length) return null;
+                final order = recentOrders[index];
+
+                return Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                  child: OrderCard(
+                    order: order,
+                    showStatusUpdate: order.status != OrderStatus.pickedUp,
+                    onStatusUpdate: () => _updateOrderStatus(order),
+                    onTap: () => _showOrderDetails(order),
+                  ),
+                );
+              },
+              childCount: (orderState.pendingOrders.length +
+                      orderState.completedOrders.length)
+                  .clamp(0, 3),
             ),
           ),
-        ),
 
-        // Recent Orders List
-        SliverList(
-          delegate: SliverChildBuilderDelegate(
-            (context, index) {
-              final order = index < _pendingOrders.length
-                  ? _pendingOrders[index]
-                  : _completedOrders[index - _pendingOrders.length];
-
-              return Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                child: OrderCard(
-                  order: order,
-                  showStatusUpdate: order.status != OrderStatus.pickedUp,
-                  onStatusUpdate: () => _updateOrderStatus(order),
-                  onTap: () => _showOrderDetails(order),
-                ),
-              );
-            },
-            childCount:
-                (_pendingOrders.length + _completedOrders.length).clamp(0, 3),
-          ),
-        ),
-
-        // Quick Actions
-        SliverToBoxAdapter(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Quick Actions',
-                  style: AppTextStyles.heading3,
-                ),
-                const SizedBox(height: 16),
-                Row(
-                  children: [
-                    Expanded(
-                      child: IconTextButton(
-                        text: 'Update Stock',
-                        icon: Icons.add_box,
-                        onPressed: () => setState(() => _currentIndex = 2),
-                        backgroundColor: AppColors.primary,
+          // Quick Actions with enhanced functionality
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Quick Actions',
+                    style: AppTextStyles.heading3,
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: IconTextButton(
+                          text: 'Update Stock',
+                          icon: Icons.add_box,
+                          onPressed: () => setState(() => _currentIndex = 2),
+                          backgroundColor: AppColors.primary,
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: IconTextButton(
-                        text: 'Check Orders',
-                        icon: Icons.list_alt,
-                        onPressed: () => setState(() => _currentIndex = 1),
-                        backgroundColor: AppColors.accent,
-                        textColor: AppColors.textPrimary,
-                        iconColor: AppColors.textPrimary,
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: IconTextButton(
+                          text: 'Check Orders',
+                          icon: Icons.list_alt,
+                          onPressed: () => setState(() => _currentIndex = 1),
+                          backgroundColor: AppColors.accent,
+                          textColor: AppColors.textPrimary,
+                          iconColor: AppColors.textPrimary,
+                        ),
                       ),
-                    ),
-                  ],
-                ),
-              ],
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
-        ),
 
-        const SliverToBoxAdapter(
-          child: SizedBox(height: 100),
-        ),
-      ],
+          const SliverToBoxAdapter(
+            child: SizedBox(height: 100),
+          ),
+        ],
+      ),
     );
   }
 
@@ -334,6 +314,8 @@ class _WorkerDashboardState extends State<WorkerDashboard> {
     required String value,
     required IconData icon,
     required Color color,
+    String? trend,
+    String? subtitle,
     VoidCallback? onTap,
   }) {
     return Card(
@@ -349,17 +331,39 @@ class _WorkerDashboardState extends State<WorkerDashboard> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Icon(icon, color: color, size: 24),
-                  Container(
-                    padding: const EdgeInsets.all(4),
-                    decoration: BoxDecoration(
-                      color: color.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: Icon(
-                      Icons.arrow_upward,
-                      color: color,
-                      size: 12,
-                    ),
+                  Row(
+                    children: [
+                      if (trend != null)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: color.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            trend,
+                            style: TextStyle(
+                              color: color,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      const SizedBox(width: 4),
+                      Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: BoxDecoration(
+                          color: color.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Icon(
+                          Icons.arrow_upward,
+                          color: color,
+                          size: 12,
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -376,6 +380,16 @@ class _WorkerDashboardState extends State<WorkerDashboard> {
                 title,
                 style: AppTextStyles.caption,
               ),
+              if (subtitle != null) ...[
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  style: AppTextStyles.caption.copyWith(
+                    color: color,
+                    fontSize: 10,
+                  ),
+                ),
+              ],
             ],
           ),
         ),
@@ -383,7 +397,7 @@ class _WorkerDashboardState extends State<WorkerDashboard> {
     );
   }
 
-  Widget _buildOrdersTab() {
+  Widget _buildOrdersTab(OrderState orderState) {
     return DefaultTabController(
       length: 2,
       child: Column(
@@ -391,10 +405,10 @@ class _WorkerDashboardState extends State<WorkerDashboard> {
           AppBar(
             title: const Text('Orders'),
             automaticallyImplyLeading: false,
-            bottom: const TabBar(
+            bottom: TabBar(
               tabs: [
-                Tab(text: 'Pending'),
-                Tab(text: 'Completed'),
+                Tab(text: 'Pending (${orderState.pendingOrders.length})'),
+                Tab(text: 'Completed (${orderState.completedOrders.length})'),
               ],
               indicatorColor: Colors.white,
               labelColor: Colors.white,
@@ -404,8 +418,9 @@ class _WorkerDashboardState extends State<WorkerDashboard> {
           Expanded(
             child: TabBarView(
               children: [
-                _buildOrdersList(_pendingOrders, showActions: true),
-                _buildOrdersList(_completedOrders, showActions: false),
+                _buildOrdersList(orderState.pendingOrders, showActions: true),
+                _buildOrdersList(orderState.completedOrders,
+                    showActions: false),
               ],
             ),
           ),
@@ -444,7 +459,7 @@ class _WorkerDashboardState extends State<WorkerDashboard> {
 
     return RefreshIndicator(
       onRefresh: () async {
-        _loadOrders();
+        ref.read(orderProvider.notifier).refreshOrders();
       },
       child: ListView.builder(
         padding: const EdgeInsets.all(16),
@@ -721,7 +736,7 @@ class _WorkerDashboardState extends State<WorkerDashboard> {
                         icon: Icons.logout,
                         title: 'Logout',
                         subtitle: 'Sign out',
-                        onTap: () => context.go('/login'),
+                        onTap: () => _showLogoutConfirmation(),
                         isDestructive: true,
                       ),
                     ],
@@ -785,14 +800,15 @@ class _WorkerDashboardState extends State<WorkerDashboard> {
     );
   }
 
-  Widget _buildBottomNavigationBar() {
+  Widget _buildBottomNavigationBar(int newOrdersCount) {
     return BottomNavigationBar(
       currentIndex: _currentIndex,
       onTap: (index) {
         setState(() {
           _currentIndex = index;
           if (index == 1) {
-            _newOrdersCount = 0; // Reset new orders count when viewing orders
+            // Clear new orders count when viewing orders
+            ref.read(orderProvider.notifier).clearNewOrdersCount();
           }
         });
       },
@@ -808,18 +824,18 @@ class _WorkerDashboardState extends State<WorkerDashboard> {
         BottomNavigationBarItem(
           icon: badges.Badge(
             badgeContent: Text(
-              '$_newOrdersCount',
+              '$newOrdersCount',
               style: const TextStyle(color: Colors.white, fontSize: 10),
             ),
-            showBadge: _newOrdersCount > 0,
+            showBadge: newOrdersCount > 0,
             child: const Icon(Icons.receipt_long_outlined),
           ),
           activeIcon: badges.Badge(
             badgeContent: Text(
-              '$_newOrdersCount',
+              '$newOrdersCount',
               style: const TextStyle(color: Colors.white, fontSize: 10),
             ),
-            showBadge: _newOrdersCount > 0,
+            showBadge: newOrdersCount > 0,
             child: const Icon(Icons.receipt_long),
           ),
           label: 'Orders',
@@ -838,7 +854,25 @@ class _WorkerDashboardState extends State<WorkerDashboard> {
     );
   }
 
-  void _showNotifications() {
+  // Helper method to format time
+  String _formatTime(DateTime dateTime) {
+    final now = DateTime.now();
+    final difference = now.difference(dateTime);
+
+    if (difference.inSeconds < 30) {
+      return 'just now';
+    } else if (difference.inMinutes < 1) {
+      return '${difference.inSeconds}s ago';
+    } else if (difference.inMinutes < 60) {
+      return '${difference.inMinutes}m ago';
+    } else if (difference.inHours < 24) {
+      return '${difference.inHours}h ago';
+    } else {
+      return '${difference.inDays}d ago';
+    }
+  }
+
+  void _showNotifications(OrderState orderState) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -869,11 +903,27 @@ class _WorkerDashboardState extends State<WorkerDashboard> {
                     style: AppTextStyles.heading3,
                   ),
                   const Spacer(),
+                  if (orderState.newOrdersCount > 0)
+                    Container(
+                      margin: const EdgeInsets.only(right: 8),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: AppColors.accent.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        '${orderState.newOrdersCount} new',
+                        style: TextStyle(
+                          color: AppColors.accent,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
                   TextButton(
                     onPressed: () {
-                      setState(() {
-                        _newOrdersCount = 0;
-                      });
+                      ref.read(orderProvider.notifier).clearNewOrdersCount();
                       Navigator.pop(context);
                     },
                     child: const Text('Clear All'),
@@ -882,20 +932,44 @@ class _WorkerDashboardState extends State<WorkerDashboard> {
               ),
             ),
             Expanded(
-              child: _newOrdersCount > 0
+              child: orderState.newOrdersCount > 0
                   ? ListView.builder(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
-                      itemCount: _newOrdersCount,
+                      itemCount: orderState.newOrdersCount,
                       itemBuilder: (context, index) => Card(
                         margin: const EdgeInsets.only(bottom: 8),
                         child: ListTile(
-                          leading: const Icon(Icons.new_releases,
-                              color: AppColors.accent),
-                          title: Text('New Order Received'),
+                          leading: Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: AppColors.accent.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Icon(
+                              Icons.new_releases,
+                              color: AppColors.accent,
+                              size: 20,
+                            ),
+                          ),
+                          title: const Text('New Order Received'),
                           subtitle: Text(
-                              'Order #${DateTime.now().millisecondsSinceEpoch + index}'),
-                          trailing:
+                            'Order received at ${_formatTime(DateTime.now().subtract(Duration(minutes: index * 2)))}',
+                          ),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                'NEW',
+                                style: TextStyle(
+                                  color: AppColors.accent,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              const SizedBox(width: 4),
                               const Icon(Icons.arrow_forward_ios, size: 16),
+                            ],
+                          ),
                           onTap: () {
                             Navigator.pop(context);
                             setState(() => _currentIndex = 1);
@@ -903,8 +977,28 @@ class _WorkerDashboardState extends State<WorkerDashboard> {
                         ),
                       ),
                     )
-                  : const Center(
-                      child: Text('No new notifications'),
+                  : Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.notifications_outlined,
+                            size: 64,
+                            color: AppColors.textLight,
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            'No new notifications',
+                            style: AppTextStyles.heading3,
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'New order notifications will appear here',
+                            style: AppTextStyles.body2,
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
+                      ),
                     ),
             ),
           ],
@@ -929,24 +1023,18 @@ class _WorkerDashboardState extends State<WorkerDashboard> {
         return; // Already completed
     }
 
-    setState(() {
-      final index = _pendingOrders.indexWhere((o) => o.id == order.id);
-      if (index != -1) {
-        _pendingOrders[index] = order.copyWith(
-          status: nextStatus,
-          updatedAt: DateTime.now(),
-        );
-
-        if (nextStatus == OrderStatus.pickedUp) {
-          _completedOrders.add(_pendingOrders.removeAt(index));
-        }
-      }
-    });
+    // Update through provider
+    ref.read(orderProvider.notifier).updateOrderStatus(order.id, nextStatus);
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text('Order status updated to ${_getStatusText(nextStatus)}'),
         backgroundColor: AppColors.success,
+        action: SnackBarAction(
+          label: 'View',
+          textColor: Colors.white,
+          onPressed: () => setState(() => _currentIndex = 1),
+        ),
       ),
     );
   }
@@ -1010,5 +1098,86 @@ class _WorkerDashboardState extends State<WorkerDashboard> {
         ),
       ),
     );
+  }
+
+  void _showLogoutConfirmation() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Logout'),
+        content: const Text('Are you sure you want to logout?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(context);
+              await _performLogout();
+            },
+            child: const Text(
+              'Logout',
+              style: TextStyle(color: AppColors.error),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _performLogout() async {
+    try {
+      // Show loading indicator
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Row(
+              children: [
+                SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                  ),
+                ),
+                SizedBox(width: 16),
+                Text('Logging out...'),
+              ],
+            ),
+            backgroundColor: AppColors.info,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+
+      // Clear authentication state
+      await ref.read(authStateProvider.notifier).logout();
+      await ref.read(currentUserProvider.notifier).clearUser();
+
+      // Navigate to login screen
+      if (mounted) {
+        context.go('/login');
+        
+        // Show success message
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Successfully logged out'),
+            backgroundColor: AppColors.success,
+          ),
+        );
+      }
+    } catch (e) {
+      // Show error message
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Logout failed: ${e.toString()}'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    }
   }
 }

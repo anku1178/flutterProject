@@ -1,77 +1,34 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/buttons.dart';
 import '../../../../core/models/models.dart';
+import '../../../../core/providers/auth_providers.dart';
 
-class CartScreen extends StatefulWidget {
+class CartScreen extends ConsumerStatefulWidget {
   const CartScreen({super.key});
 
   @override
-  State<CartScreen> createState() => _CartScreenState();
+  ConsumerState<CartScreen> createState() => _CartScreenState();
 }
 
-class _CartScreenState extends State<CartScreen> {
-  List<CartItem> _cartItems = [];
+class _CartScreenState extends ConsumerState<CartScreen> {
+  final TextEditingController _promoController = TextEditingController();
   double _deliveryFee = 5.99;
   double _taxRate = 0.08; // 8% tax
+  String? _appliedPromoCode;
+  double _promoDiscount = 0.0;
 
   @override
-  void initState() {
-    super.initState();
-    _loadCartItems();
-  }
-
-  void _loadCartItems() {
-    // Simulate loading cart items
-    _cartItems = [
-      CartItem(
-        product: Product(
-          id: '1',
-          name: 'Wireless Headphones',
-          description: 'High-quality wireless headphones',
-          price: 129.99,
-          stock: 15,
-          category: 'Electronics',
-          imageUrl: 'https://via.placeholder.com/100x100?text=Headphones',
-          createdAt: DateTime.now(),
-          updatedAt: DateTime.now(),
-        ),
-        quantity: 1,
-      ),
-      CartItem(
-        product: Product(
-          id: '2',
-          name: 'Fresh Apples',
-          description: 'Organic red apples',
-          price: 4.99,
-          stock: 50,
-          category: 'Groceries',
-          imageUrl: 'https://via.placeholder.com/100x100?text=Apples',
-          createdAt: DateTime.now(),
-          updatedAt: DateTime.now(),
-        ),
-        quantity: 3,
-      ),
-      CartItem(
-        product: Product(
-          id: '3',
-          name: 'Cotton T-Shirt',
-          description: 'Comfortable cotton t-shirt',
-          price: 19.99,
-          stock: 30,
-          category: 'Clothing',
-          imageUrl: 'https://via.placeholder.com/100x100?text=T-Shirt',
-          createdAt: DateTime.now(),
-          updatedAt: DateTime.now(),
-        ),
-        quantity: 2,
-      ),
-    ];
+  void dispose() {
+    _promoController.dispose();
+    super.dispose();
   }
 
   double get _subtotal {
-    return _cartItems.fold(0.0, (sum, item) => sum + item.totalPrice);
+    final cartItems = ref.read(cartProvider);
+    return cartItems.fold(0.0, (sum, item) => sum + item.totalPrice);
   }
 
   double get _tax {
@@ -79,19 +36,22 @@ class _CartScreenState extends State<CartScreen> {
   }
 
   double get _total {
-    return _subtotal + _deliveryFee + _tax;
+    return _subtotal + _deliveryFee + _tax - _promoDiscount;
   }
 
   @override
   Widget build(BuildContext context) {
+    final cartItems = ref.watch(cartProvider);
+    final cartNotifier = ref.read(cartProvider.notifier);
+
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
-        title: Text('Shopping Cart (${_cartItems.length})'),
+        title: Text('Shopping Cart (${cartItems.length})'),
         actions: [
-          if (_cartItems.isNotEmpty)
+          if (cartItems.isNotEmpty)
             TextButton(
-              onPressed: _clearCart,
+              onPressed: () => _clearCart(cartNotifier),
               child: const Text(
                 'Clear All',
                 style: TextStyle(color: Colors.white),
@@ -99,9 +59,11 @@ class _CartScreenState extends State<CartScreen> {
             ),
         ],
       ),
-      body: _cartItems.isEmpty ? _buildEmptyCart() : _buildCartContent(),
+      body: cartItems.isEmpty
+          ? _buildEmptyCart()
+          : _buildCartContent(cartItems, cartNotifier),
       bottomNavigationBar:
-          _cartItems.isNotEmpty ? _buildCheckoutSection() : null,
+          cartItems.isNotEmpty ? _buildCheckoutSection() : null,
     );
   }
 
@@ -138,16 +100,17 @@ class _CartScreenState extends State<CartScreen> {
     );
   }
 
-  Widget _buildCartContent() {
+  Widget _buildCartContent(
+      List<CartItem> cartItems, CartNotifier cartNotifier) {
     return Column(
       children: [
         Expanded(
           child: ListView.builder(
             padding: const EdgeInsets.all(16),
-            itemCount: _cartItems.length,
+            itemCount: cartItems.length,
             itemBuilder: (context, index) {
-              final item = _cartItems[index];
-              return _buildCartItemCard(item, index);
+              final item = cartItems[index];
+              return _buildCartItemCard(item, cartNotifier);
             },
           ),
         ),
@@ -156,7 +119,7 @@ class _CartScreenState extends State<CartScreen> {
     );
   }
 
-  Widget _buildCartItemCard(CartItem item, int index) {
+  Widget _buildCartItemCard(CartItem item, CartNotifier cartNotifier) {
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       child: Padding(
@@ -200,6 +163,17 @@ class _CartScreenState extends State<CartScreen> {
                     '\$${item.product.price.toStringAsFixed(2)}',
                     style: AppTextStyles.price,
                   ),
+                  if (!item.product.isInStock)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text(
+                        'Out of Stock',
+                        style: AppTextStyles.caption.copyWith(
+                          color: AppColors.error,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
                 ],
               ),
             ),
@@ -212,8 +186,10 @@ class _CartScreenState extends State<CartScreen> {
                   children: [
                     _buildQuantityButton(
                       icon: Icons.remove,
-                      onPressed: () =>
-                          _updateQuantity(index, item.quantity - 1),
+                      onPressed: () => cartNotifier.updateQuantity(
+                        item.product.id,
+                        item.quantity - 1,
+                      ),
                     ),
                     Container(
                       width: 40,
@@ -230,8 +206,12 @@ class _CartScreenState extends State<CartScreen> {
                     ),
                     _buildQuantityButton(
                       icon: Icons.add,
-                      onPressed: () =>
-                          _updateQuantity(index, item.quantity + 1),
+                      onPressed: item.product.isInStock
+                          ? () => cartNotifier.updateQuantity(
+                                item.product.id,
+                                item.quantity + 1,
+                              )
+                          : null,
                     ),
                   ],
                 ),
@@ -248,7 +228,7 @@ class _CartScreenState extends State<CartScreen> {
             // Remove Button
             IconButton(
               icon: const Icon(Icons.delete_outline, color: AppColors.error),
-              onPressed: () => _removeItem(index),
+              onPressed: () => _removeItem(item.product.id, cartNotifier),
             ),
           ],
         ),
@@ -258,8 +238,9 @@ class _CartScreenState extends State<CartScreen> {
 
   Widget _buildQuantityButton({
     required IconData icon,
-    required VoidCallback onPressed,
+    required VoidCallback? onPressed,
   }) {
+    final isEnabled = onPressed != null;
     return InkWell(
       onTap: onPressed,
       borderRadius: BorderRadius.circular(4),
@@ -267,10 +248,17 @@ class _CartScreenState extends State<CartScreen> {
         width: 32,
         height: 32,
         decoration: BoxDecoration(
-          border: Border.all(color: AppColors.borderColor),
+          border: Border.all(
+            color: isEnabled ? AppColors.borderColor : AppColors.textLight,
+          ),
           borderRadius: BorderRadius.circular(4),
+          color: isEnabled ? null : AppColors.surface,
         ),
-        child: Icon(icon, size: 16, color: AppColors.primary),
+        child: Icon(
+          icon,
+          size: 16,
+          color: isEnabled ? AppColors.primary : AppColors.textLight,
+        ),
       ),
     );
   }
@@ -295,6 +283,21 @@ class _CartScreenState extends State<CartScreen> {
           _buildSummaryRow('Subtotal', _subtotal),
           _buildSummaryRow('Delivery Fee', _deliveryFee),
           _buildSummaryRow('Tax', _tax),
+          if (_promoDiscount > 0) ...[
+            _buildSummaryRow('Promo Discount', -_promoDiscount,
+                isDiscount: true),
+            if (_appliedPromoCode != null)
+              Padding(
+                padding: const EdgeInsets.only(left: 8),
+                child: Text(
+                  'Code: $_appliedPromoCode',
+                  style: AppTextStyles.caption.copyWith(
+                    color: AppColors.success,
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+              ),
+          ],
           const Divider(),
           _buildSummaryRow('Total', _total, isTotal: true),
         ],
@@ -302,7 +305,8 @@ class _CartScreenState extends State<CartScreen> {
     );
   }
 
-  Widget _buildSummaryRow(String label, double amount, {bool isTotal = false}) {
+  Widget _buildSummaryRow(String label, double amount,
+      {bool isTotal = false, bool isDiscount = false}) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
@@ -315,10 +319,12 @@ class _CartScreenState extends State<CartScreen> {
                 : AppTextStyles.body2,
           ),
           Text(
-            '\$${amount.toStringAsFixed(2)}',
+            '\$${amount.abs().toStringAsFixed(2)}',
             style: isTotal
                 ? AppTextStyles.price.copyWith(fontSize: 18)
-                : AppTextStyles.body2,
+                : isDiscount
+                    ? AppTextStyles.body2.copyWith(color: AppColors.success)
+                    : AppTextStyles.body2,
           ),
         ],
       ),
@@ -338,26 +344,60 @@ class _CartScreenState extends State<CartScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Promo Code
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    decoration: const InputDecoration(
-                      hintText: 'Enter promo code',
-                      contentPadding:
-                          EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            // Promo Code Section
+            if (_appliedPromoCode == null) ...[
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _promoController,
+                      decoration: const InputDecoration(
+                        hintText: 'Enter promo code',
+                        contentPadding:
+                            EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      ),
+                      textCapitalization: TextCapitalization.characters,
                     ),
                   ),
+                  const SizedBox(width: 8),
+                  SecondaryButton(
+                    text: 'Apply',
+                    onPressed: _applyPromoCode,
+                    height: 40,
+                  ),
+                ],
+              ),
+            ] else ...[
+              // Applied Promo Code Display
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppColors.success.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: AppColors.success.withOpacity(0.3)),
                 ),
-                const SizedBox(width: 8),
-                SecondaryButton(
-                  text: 'Apply',
-                  onPressed: () => _applyPromoCode(),
-                  height: 40,
+                child: Row(
+                  children: [
+                    Icon(Icons.check_circle,
+                        color: AppColors.success, size: 20),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Promo code "$_appliedPromoCode" applied',
+                        style: AppTextStyles.body2.copyWith(
+                          color: AppColors.success,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: _removePromoCode,
+                      child: const Text('Remove'),
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              ),
+            ],
             const SizedBox(height: 16),
 
             // Checkout Button
@@ -372,21 +412,8 @@ class _CartScreenState extends State<CartScreen> {
     );
   }
 
-  void _updateQuantity(int index, int newQuantity) {
-    if (newQuantity < 1) {
-      _removeItem(index);
-      return;
-    }
-
-    setState(() {
-      _cartItems[index] = _cartItems[index].copyWith(quantity: newQuantity);
-    });
-  }
-
-  void _removeItem(int index) {
-    setState(() {
-      _cartItems.removeAt(index);
-    });
+  void _removeItem(String productId, CartNotifier cartNotifier) {
+    cartNotifier.removeItem(productId);
 
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
@@ -396,7 +423,7 @@ class _CartScreenState extends State<CartScreen> {
     );
   }
 
-  void _clearCart() {
+  void _clearCart(CartNotifier cartNotifier) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -410,9 +437,8 @@ class _CartScreenState extends State<CartScreen> {
           ),
           TextButton(
             onPressed: () {
-              setState(() {
-                _cartItems.clear();
-              });
+              cartNotifier.clearCart();
+              _removePromoCode();
               Navigator.pop(context);
             },
             child: const Text('Clear All'),
@@ -423,10 +449,67 @@ class _CartScreenState extends State<CartScreen> {
   }
 
   void _applyPromoCode() {
-    // Simulate promo code application
+    final code = _promoController.text.trim().toUpperCase();
+
+    if (code.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please enter a promo code'),
+          backgroundColor: AppColors.warning,
+        ),
+      );
+      return;
+    }
+
+    // Demo promo codes
+    double discount = 0.0;
+    switch (code) {
+      case 'SAVE10':
+        discount = _subtotal * 0.10; // 10% discount
+        break;
+      case 'SAVE20':
+        discount = _subtotal * 0.20; // 20% discount
+        break;
+      case 'FREESHIP':
+        discount = _deliveryFee; // Free shipping
+        break;
+      case 'WELCOME':
+        discount = 5.0; // $5 off
+        break;
+      default:
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Invalid promo code'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+        return;
+    }
+
+    setState(() {
+      _appliedPromoCode = code;
+      _promoDiscount = discount;
+      _promoController.clear();
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+            'Promo code applied! You saved \$${discount.toStringAsFixed(2)}'),
+        backgroundColor: AppColors.success,
+      ),
+    );
+  }
+
+  void _removePromoCode() {
+    setState(() {
+      _appliedPromoCode = null;
+      _promoDiscount = 0.0;
+    });
+
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text('Promo code feature coming soon'),
+        content: Text('Promo code removed'),
         backgroundColor: AppColors.info,
       ),
     );

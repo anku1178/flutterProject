@@ -1,23 +1,27 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/buttons.dart';
 import '../../../../core/models/models.dart';
+import '../../../../core/providers/auth_providers.dart';
 
-class LoginScreen extends StatefulWidget {
+class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
 
   @override
-  State<LoginScreen> createState() => _LoginScreenState();
+  ConsumerState<LoginScreen> createState() => _LoginScreenState();
 }
 
-class _LoginScreenState extends State<LoginScreen> {
+class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
-  UserRole _selectedRole = UserRole.customer;
-  bool _isLoading = false;
   bool _obscurePassword = true;
+
+  // Private access codes
+  static const String _workerAccessCode = 'worker123';
+  static const String _adminAccessCode = 'admin456';
 
   @override
   void dispose() {
@@ -29,31 +33,42 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _login() async {
     if (!_formKey.currentState!.validate()) return;
 
-    setState(() {
-      _isLoading = true;
-    });
+    final password = _passwordController.text.trim();
+    final email = _emailController.text.trim();
 
-    // Simulate login process
-    await Future.delayed(const Duration(seconds: 2));
+    UserRole role = UserRole.customer;
+    String userId = 'customer_${DateTime.now().millisecondsSinceEpoch}';
+    String userName = 'Customer User';
 
-    if (mounted) {
-      setState(() {
-        _isLoading = false;
-      });
-
-      // Navigate based on selected role
-      switch (_selectedRole) {
-        case UserRole.customer:
-          context.go('/customer');
-          break;
-        case UserRole.worker:
-          context.go('/worker');
-          break;
-        case UserRole.admin:
-          context.go('/admin');
-          break;
-      }
+    // Check for private access codes first
+    if (password == _adminAccessCode) {
+      role = UserRole.admin;
+      userId = 'admin_${DateTime.now().millisecondsSinceEpoch}';
+      userName = 'Admin User';
+    } else if (password == _workerAccessCode) {
+      role = UserRole.worker;
+      userId = 'worker_${DateTime.now().millisecondsSinceEpoch}';
+      userName = 'Worker User';
     }
+
+    // Create user object
+    final user = User(
+      id: userId,
+      name: userName,
+      email: email,
+      phone: '+1234567890', // Demo phone
+      role: role,
+      createdAt: DateTime.now(),
+    );
+
+    // Use the authentication provider to login
+    final authNotifier = ref.read(authStateProvider.notifier);
+    final userNotifier = ref.read(currentUserProvider.notifier);
+
+    await authNotifier.login(user);
+    await userNotifier.setUser(user);
+
+    // Navigation will be handled by the router's redirect logic
   }
 
   @override
@@ -94,7 +109,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'Sign in to continue to General Store',
+                      'Sign in to shop at General Store',
                       style: AppTextStyles.body1.copyWith(
                         color: AppColors.textSecondary,
                       ),
@@ -104,45 +119,29 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 const SizedBox(height: 48),
 
-                // Role Selection
-                Text(
-                  'Login as:',
-                  style: AppTextStyles.subtitle1,
-                ),
-                const SizedBox(height: 12),
+                // Customer Login Only
                 Container(
-                  padding: const EdgeInsets.all(4),
+                  padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: AppColors.surface,
+                    color: AppColors.primary.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: AppColors.primary.withOpacity(0.3),
+                    ),
                   ),
                   child: Row(
                     children: [
-                      Expanded(
-                        child: _RoleButton(
-                          role: UserRole.customer,
-                          selectedRole: _selectedRole,
-                          onTap: (role) => setState(() => _selectedRole = role),
-                          icon: Icons.person,
-                          label: 'Customer',
-                        ),
+                      Icon(
+                        Icons.person,
+                        color: AppColors.primary,
+                        size: 24,
                       ),
-                      Expanded(
-                        child: _RoleButton(
-                          role: UserRole.worker,
-                          selectedRole: _selectedRole,
-                          onTap: (role) => setState(() => _selectedRole = role),
-                          icon: Icons.work,
-                          label: 'Worker',
-                        ),
-                      ),
-                      Expanded(
-                        child: _RoleButton(
-                          role: UserRole.admin,
-                          selectedRole: _selectedRole,
-                          onTap: (role) => setState(() => _selectedRole = role),
-                          icon: Icons.admin_panel_settings,
-                          label: 'Admin',
+                      const SizedBox(width: 12),
+                      Text(
+                        'Customer Login',
+                        style: AppTextStyles.subtitle1.copyWith(
+                          color: AppColors.primary,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
                     ],
@@ -218,10 +217,16 @@ class _LoginScreenState extends State<LoginScreen> {
                 const SizedBox(height: 24),
 
                 // Login Button
-                PrimaryButton(
-                  text: 'Login',
-                  onPressed: _login,
-                  isLoading: _isLoading,
+                Consumer(
+                  builder: (context, ref, child) {
+                    final authState = ref.watch(authStateProvider);
+
+                    return PrimaryButton(
+                      text: 'Login',
+                      onPressed: authState.isLoading ? null : _login,
+                      isLoading: authState.isLoading,
+                    );
+                  },
                 ),
                 const SizedBox(height: 16),
 
@@ -271,16 +276,81 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        'Customer: customer@demo.com / password123',
+                        'Customer Login:',
+                        style: AppTextStyles.caption.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      Text(
+                        'Email: customer@demo.com',
                         style: AppTextStyles.caption,
                       ),
                       Text(
-                        'Worker: worker@demo.com / password123',
+                        'Password: password123',
                         style: AppTextStyles.caption,
                       ),
-                      Text(
-                        'Admin: admin@demo.com / password123',
-                        style: AppTextStyles.caption,
+                      const SizedBox(height: 12),
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: AppColors.primary.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: AppColors.primary.withOpacity(0.3),
+                          ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Worker Access:',
+                              style: AppTextStyles.caption.copyWith(
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.primary,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Email: worker@demo.com (or any email)',
+                              style: AppTextStyles.caption.copyWith(
+                                fontSize: 11,
+                                color: AppColors.primary,
+                              ),
+                            ),
+                            Text(
+                              'Password: worker123',
+                              style: AppTextStyles.caption.copyWith(
+                                fontSize: 11,
+                                color: AppColors.primary,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Admin Access:',
+                              style: AppTextStyles.caption.copyWith(
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.primary,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Email: admin@demo.com (or any email)',
+                              style: AppTextStyles.caption.copyWith(
+                                fontSize: 11,
+                                color: AppColors.primary,
+                              ),
+                            ),
+                            Text(
+                              'Password: admin456',
+                              style: AppTextStyles.caption.copyWith(
+                                fontSize: 11,
+                                color: AppColors.primary,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ],
                   ),
@@ -288,57 +358,6 @@ class _LoginScreenState extends State<LoginScreen> {
               ],
             ),
           ),
-        ),
-      ),
-    );
-  }
-}
-
-class _RoleButton extends StatelessWidget {
-  final UserRole role;
-  final UserRole selectedRole;
-  final Function(UserRole) onTap;
-  final IconData icon;
-  final String label;
-
-  const _RoleButton({
-    required this.role,
-    required this.selectedRole,
-    required this.onTap,
-    required this.icon,
-    required this.label,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final isSelected = role == selectedRole;
-
-    return GestureDetector(
-      onTap: () => onTap(role),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        decoration: BoxDecoration(
-          color: isSelected ? AppColors.primary : Colors.transparent,
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Column(
-          children: [
-            Icon(
-              icon,
-              color: isSelected ? Colors.white : AppColors.textSecondary,
-              size: 20,
-            ),
-            const SizedBox(height: 4),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
-                color: isSelected ? Colors.white : AppColors.textSecondary,
-              ),
-            ),
-          ],
         ),
       ),
     );

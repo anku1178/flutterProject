@@ -221,7 +221,7 @@ class OrderCard extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    'Order #${order.id.substring(0, 8)}',
+                    'Order #${order.id.length > 8 ? order.id.substring(0, 8) : order.id}',
                     style: AppTextStyles.subtitle1,
                   ),
                   Container(

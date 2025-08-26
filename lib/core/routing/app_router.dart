@@ -1,5 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../providers/auth_providers.dart';
+import '../providers/product_providers.dart';
+import '../models/models.dart';
 import '../../features/auth/presentation/screens/login_screen.dart';
 import '../../features/auth/presentation/screens/signup_screen.dart';
 import '../../features/onboarding/presentation/screens/onboarding_screen.dart';
@@ -19,8 +22,48 @@ import '../../features/admin/presentation/screens/user_management_screen.dart';
 import '../../features/admin/presentation/screens/excel_import_screen.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
+  final authState = ref.watch(authStateProvider);
+
   return GoRouter(
-    initialLocation: '/onboarding',
+    initialLocation: _getInitialLocation(authState),
+    redirect: (context, state) {
+      final isLoggedIn = authState.isLoggedIn;
+      final onboardingCompleted = authState.onboardingCompleted;
+      final currentLocation = state.matchedLocation;
+
+      // If not onboarded, always go to onboarding (except if already there)
+      if (!onboardingCompleted && currentLocation != '/onboarding') {
+        return '/onboarding';
+      }
+
+      // If onboarded but not logged in, go to login (except if on auth pages)
+      if (onboardingCompleted && !isLoggedIn) {
+        if (currentLocation != '/login' && currentLocation != '/signup') {
+          return '/login';
+        }
+      }
+
+      // If trying to access onboarding or auth pages while logged in, redirect to dashboard
+      if (isLoggedIn &&
+          (currentLocation == '/onboarding' ||
+              currentLocation == '/login' ||
+              currentLocation == '/signup')) {
+        final user = ref.read(currentUserProvider);
+        if (user != null) {
+          switch (user.role) {
+            case UserRole.customer:
+              return '/customer';
+            case UserRole.worker:
+              return '/worker';
+            case UserRole.admin:
+              return '/admin';
+          }
+        }
+        return '/customer'; // Default fallback
+      }
+
+      return null; // No redirect needed
+    },
     routes: [
       // Onboarding and Auth Routes
       GoRoute(
@@ -110,3 +153,18 @@ final routerProvider = Provider<GoRouter>((ref) {
     ],
   );
 });
+
+// Helper function to determine initial location based on auth state
+String _getInitialLocation(AuthState authState) {
+  if (!authState.onboardingCompleted) {
+    return '/onboarding';
+  }
+
+  if (!authState.isLoggedIn) {
+    return '/login';
+  }
+
+  // User is logged in, default to customer dashboard
+  // This will be corrected by redirect logic based on actual user role
+  return '/customer';
+}
